@@ -112,7 +112,7 @@ def create_agent():
         final_title = str(title_res.content).strip().replace('"', '').replace("'", "")
 
         # 2. 보고서 본문 작성
-        report_prompt = f"제목: {final_title}\n자료: {state['context']}\n2026년 기준 전문 리포트를 작성하세요. 마지막엔 'Jiho/Suho Daddy's Agent Report'를 넣으세요."
+        report_prompt = f"제목: {final_title}\n자료: {state['context']}\n2026년 기준 전문 리포트를 작성하세요. 마지막엔 'Joosung's Agent Report'를 넣으세요."
         report_res = smart_llm.invoke(report_prompt)
         
         return {"context": [report_res.content], "final_title": final_title}
@@ -236,7 +236,7 @@ else:
         )
     
     with col2:
-        st.write("🎨 **슬라이드 작성성**")
+        st.write("🎨 **슬라이드 작성**")
         # Manus API 키 재확인 로직 (인식 오류 방지)
         current_manus_key = st.secrets.get("MANUS_API_KEY")
         
@@ -272,4 +272,5 @@ if query:
     final_title = result['final_title']
     st.session_state.history.append({"title": final_title, "report": final_report})
     st.session_state.selected_report = {"title": final_title, "report": final_report}
+
     st.rerun()
