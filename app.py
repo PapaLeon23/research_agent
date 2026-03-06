@@ -17,6 +17,7 @@ ANT_KEY = st.secrets.get("ANTHROPIC_API_KEY")
 GEM_KEY = st.secrets.get("GOOGLE_API_KEY")
 TAV_KEY = st.secrets.get("TAVILY_API_KEY")
 GAMMA_KEY = st.secrets.get("GAMMA_API_KEY")
+MANUS_API_KEY = st.secrets.get("MANUS_API_KEY")
 
 # --- 2. 초기 세션 상태 ---
 if "history" not in st.session_state:
@@ -74,27 +75,26 @@ def create_agent():
                 except: pass
         return {"context": state['context'] + [yt_summary]}
 
-    def critic_node(state: AgentState):
-        st.write("⚖️ **Step 4. Critic**: 정보 충분성 검토 중...")
-        # 사유를 명확히 요구하도록 프롬프트 보강
-        prompt = f"""
-        현재까지 수집된 자료가 '{state['topic']}'에 대해 충분한지 판단하세요.
-        자료: {state['context']}
-        
-        결과가 충분하면 'FINISH'라고 답하세요.
-        부족하다면 반드시 'MORE / 부족한 사유(한 문장)' 형식으로 답하세요.
-        """
-        res = smart_llm.invoke(prompt)
-        resp = str(res.content).strip()
-        
-        if "MORE" in resp and state['iteration'] < 2:
-            # "MORE / 사유"에서 사유 부분만 추출
-            reason = resp.split('/')[-1].strip() if '/' in resp else "추가적인 세부 정보 수집이 필요합니다."
-            st.warning(f"🔍 **정보 보완 필요**: {reason}") # 사용자 화면에 사유 출력
-            return {"next_step": "continue", "iteration": state['iteration'] + 1}
-        
-        st.success("✅ 정보가 충분합니다. 최종 보고서를 작성합니다.")
-        return {"next_step": "end", "iteration": state['iteration'] + 1}
+def critic_node(state: AgentState):
+    st.write("⚖️ **Step 4. Critic**: 정보 충분성 검토 중...")
+    prompt = f"""
+    현재까지 수집된 자료가 '{state['topic']}'에 대해 충분한지 판단하세요.
+    자료: {state['context']}
+    
+    결과가 충분하면 'FINISH'라고 답하세요.
+    부족하다면 반드시 'MORE / 부족한 사유(한 문장)' 형식으로 답하세요.
+    """
+    res = smart_llm.invoke(prompt)
+    resp = str(res.content).strip()
+    
+    if "MORE" in resp and state['iteration'] < 2:
+        # "MORE / 사유"에서 사유 부분만 추출하여 화면에 표시
+        reason = resp.split('/')[-1].strip() if '/' in resp else "추가적인 세부 정보 수집이 필요합니다."
+        st.warning(f"🔍 **정보 보완 필요**: {reason}")
+        return {"next_step": "continue", "iteration": state['iteration'] + 1}
+    
+    st.success("✅ 정보가 충분합니다. 최종 보고서를 작성합니다.")
+    return {"next_step": "end", "iteration": state['iteration'] + 1}
 
     def synthesizer_node(state: AgentState):
         st.write("📝 **Step 5. Synthesizer**: 최종 보고서 및 제목 생성 중...")
@@ -123,66 +123,66 @@ def create_agent():
 
 # --- 4. 유틸리티 함수 ---
 def create_manus_infographic(topic, report_content, style_instruction):
-    """
-    Manus AI를 사용하여 리서치 내용을 16:9 인포그래픽 슬라이드로 제작합니다.
-    """
     if not MANUS_API_KEY:
         return None, "Manus API 키가 설정되지 않았습니다."
 
+    # 공식 문서 Base URL: https://api.manus.ai
     url = "https://api.manus.ai/v1/tasks"
     headers = {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "API_KEY": MANUS_API_KEY
+        "API_KEY": MANUS_API_KEY, # 헤더 명칭 확인됨
+        "Content-Type": "application/json"
     }
     
-    # [인포그래픽 특화 프롬프트] 
-    # 16:9 비율 및 사용자 정의 스타일 가이드 반영
-    prompt = f"""
-    Create a professional 16:9 infographic presentation based on this research.
+    # 인포그래픽 및 16:9 비율 강조 프롬프트
+    full_prompt = f"""
+    Create a professional 16:9 infographic presentation based on the following report.
     
     Topic: {topic}
-    Content: {report_content[:5000]}
+    Report Content: {report_content[:4000]}
     
-    [Design Direction: CRITICAL]
-    Style Theme: {style_instruction}
-    Layout: 16:9 Widescreen slides.
-    Visual Type: Infographic style (Use icons, data charts, and minimal text).
-    Structure: Break down complex data into visual diagrams and flowcharts.
-    Formatting: Do not use standard bullet points only; use creative infographic layouts.
+    [Design Requirements]
+    1. Style: {style_instruction}
+    2. Format: 16:9 Widescreen slides.
+    3. Type: High-quality infographic with charts, icons, and minimal text.
+    4. Layout: Do not use simple bullet points. Use creative visual diagrams.
     """
     
+    # API 레퍼런스 필드명 반영 (agentProfile, taskMode 등)
     data = {
-        "prompt": prompt,
-        "task_mode": "agent",
-        "agent_profile": "manus-1.6" # 인포그래픽 구성 능력이 강화된 최신 프로필
+        "prompt": full_prompt,
+        "agentProfile": "manus-1.6-lite", # 무료 버전 프로필
+        "taskMode": "agent",
+        "createShareableLink": True # 공유 링크 생성 활성화
     }
 
     try:
         response = requests.post(url, json=data, headers=headers)
         if response.status_code not in [200, 201]:
-            return None, f"Manus API 오류: {response.status_code}"
+            return None, f"Manus API 오류: {response.status_code} - {response.text}"
         
-        task_id = response.json().get("id")
-        
+        res_json = response.json()
+        task_id = res_json.get("task_id") # 레퍼런스상 응답 필드는 task_id
+        share_url = res_json.get("share_url")
+
         # 상태 폴링 (Polling)
-        with st.status("📊 Manus 슬라이드 에이전트 가동 중...", expanded=True) as s:
+        with st.status("📊 Manus 인포그래픽 에이전트 가동 중...", expanded=True) as s:
             for _ in range(60): 
                 time.sleep(10)
-                status_res = requests.get(f"{url}/{task_id}", headers=headers)
+                # Task 상태 조회 (GET /v1/tasks/{task_id})
+                status_res = requests.get(f"https://api.manus.ai/v1/tasks/{task_id}", headers={"API_KEY": MANUS_API_KEY})
                 status_data = status_res.json()
                 
-                curr_status = status_data.get("status")
-                if curr_status == "completed":
-                    files = status_data.get("files", [])
-                    # PPTX 파일 우선 추출
-                    pptx_url = next((f['url'] for f in files if f['filename'].endswith('.pptx')), None)
+                state = status_data.get("status")
+                if state == "completed":
                     s.update(label="✅ 인포그래픽 슬라이드 완성!", state="complete")
-                    return pptx_url or status_data.get("share_url"), "성공"
-                elif curr_status == "error":
+                    # 결과 파일에서 pptx 찾기
+                    files = status_data.get("files", [])
+                    pptx_url = next((f['url'] for f in files if f.get('filename', '').endswith('.pptx')), None)
+                    return pptx_url or share_url, "성공"
+                elif state == "error":
                     return None, f"Manus 에러: {status_data.get('error_message')}"
                     
-        return None, "시간 초과"
+        return share_url, "시간 초과 (작업은 계속 진행 중일 수 있습니다)"
     except Exception as e:
         return None, str(e)
 
