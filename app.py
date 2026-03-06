@@ -24,6 +24,11 @@ if "history" not in st.session_state:
 if "selected_report" not in st.session_state:
     st.session_state.selected_report = None
 
+if "manus_processing" not in st.session_state:
+    st.session_state.manus_processing = False
+if "manus_result_url" not in st.session_state:
+    st.session_state.manus_result_url = None
+
 # --- 3. 에이전트 핵심 로직 ---
 class AgentState(TypedDict):
     topic: str
@@ -112,7 +117,7 @@ def create_agent():
         final_title = str(title_res.content).strip().replace('"', '').replace("'", "")
 
         # 2. 보고서 본문 작성
-        report_prompt = f"제목: {final_title}\n자료: {state['context']}\n2026년 기준 전문 리포트를 작성하세요. 마지막엔 'Joosung's Agent Report'를 넣으세요."
+        report_prompt = f"제목: {final_title}\n자료: {state['context']}\n2026년 기준 전문 리포트를 작성하세요. 마지막엔 'Jiho/Suho Daddy's Agent Report'를 넣으세요."
         report_res = smart_llm.invoke(report_prompt)
         
         return {"context": [report_res.content], "final_title": final_title}
@@ -236,30 +241,51 @@ else:
         )
     
     with col2:
-        st.write("🎨 **슬라이드 작성**")
-        # Manus API 키 재확인 로직 (인식 오류 방지)
-        current_manus_key = st.secrets.get("MANUS_API_KEY")
+        st.write("🎨 **시각화 자료**")
         
-        with st.expander("📊 Manus 인포그래픽 슬라이드 생성", expanded=True):
+        # 세션 상태 초기화 (상단에 없다면 여기에 정의)
+        if "manus_status" not in st.session_state:
+            st.session_state.manus_status = "idle"  # idle, processing, completed
+        if "manus_url" not in st.session_state:
+            st.session_state.manus_url = None
+
+        with st.expander("📊 Manus 인포그래픽 슬라이드 제작", expanded=True):
             style_input = st.text_input(
                 "디자인 테마", 
-                placeholder="예: 'Professional Blue, Modern, High-tech'",
-                key="manus_style_input"
+                placeholder="예: 'Professional Blue, Modern'",
+                disabled=(st.session_state.manus_status == "processing")
             )
-            
-            if st.button("🚀 슬라이드 생성 시작", use_container_width=True):
-                if not current_manus_key:
-                    st.error("🚨 MANUS_API_KEY가 시스템에 등록되지 않았습니다. Secrets 설정을 확인해주세요.")
-                else:
-                    with st.spinner("Manus 에이전트가 슬라이드를 디자인하고 있습니다..."):
-                        # 여기서 전역 변수 대신 직접 키를 넘기거나 함수 내에서 st.secrets를 쓰도록 되어있어야 합니다.
-                        url, msg = create_manus_infographic(item['title'], item['report'], style_input)
-                        if url:
-                            st.success("✅ 인포그래픽 슬라이드 제작 완료!")
-                            st.link_button("📂 결과물 확인 및 다운로드", url, use_container_width=True)
-                        else:
-                            st.error(f"❌ 생성 실패: {msg}")
-                            
+
+            # 상태에 따른 버튼 렌더링
+            if st.session_state.manus_status == "idle":
+                if st.button("🚀 슬라이드 생성 시작", use_container_width=True):
+                    st.session_state.manus_status = "processing"
+                    st.rerun()
+
+            elif st.session_state.manus_status == "processing":
+                # 버튼을 비활성화하고 '작업 중' 표시
+                st.button("⏳ 슬라이드 제작 중... 잠시만 기다려주세요", disabled=True, use_container_width=True)
+                
+                with st.status("📊 Manus 에이전트 가동 중...", expanded=True) as status:
+                    url, msg = create_manus_infographic(item['title'], item['report'], style_input)
+                    if url:
+                        st.session_state.manus_url = url
+                        st.session_state.manus_status = "completed"
+                        status.update(label="✅ 제작 완료!", state="complete")
+                        st.rerun()
+                    else:
+                        st.session_state.manus_status = "idle"
+                        st.error(f"❌ 오류 발생: {msg}")
+                        if st.button("🔄 다시 시도"): st.rerun()
+
+            elif st.session_state.manus_status == "completed":
+                # 완료 시 '슬라이드 확인' 버튼으로 변경
+                st.link_button("📂 제작된 슬라이드 확인하기", st.session_state.manus_url, use_container_width=True, type="primary")
+                if st.button("🆕 새로 만들기", use_container_width=True):
+                    st.session_state.manus_status = "idle"
+                    st.session_state.manus_url = None
+                    st.rerun()
+
 # 입력창 (고정)
 query = st.chat_input("조사할 업무 주제를 입력하세요 (예: 2026년 eSIM 시장 전망)")
 if query:
@@ -272,5 +298,4 @@ if query:
     final_title = result['final_title']
     st.session_state.history.append({"title": final_title, "report": final_report})
     st.session_state.selected_report = {"title": final_title, "report": final_report}
-
     st.rerun()
