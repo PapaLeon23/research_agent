@@ -76,11 +76,24 @@ def create_agent():
 
     def critic_node(state: AgentState):
         st.write("⚖️ **Step 4. Critic**: 정보 충분성 검토 중...")
-        prompt = f"자료가 충분하면 'FINISH', 부족하면 'MORE / 사유'라고 답하세요.\n자료: {state['context']}"
+        # 사유를 명확히 요구하도록 프롬프트 보강
+        prompt = f"""
+        현재까지 수집된 자료가 '{state['topic']}'에 대해 충분한지 판단하세요.
+        자료: {state['context']}
+        
+        결과가 충분하면 'FINISH'라고 답하세요.
+        부족하다면 반드시 'MORE / 부족한 사유(한 문장)' 형식으로 답하세요.
+        """
         res = smart_llm.invoke(prompt)
-        resp = str(res.content)
+        resp = str(res.content).strip()
+        
         if "MORE" in resp and state['iteration'] < 2:
+            # "MORE / 사유"에서 사유 부분만 추출
+            reason = resp.split('/')[-1].strip() if '/' in resp else "추가적인 세부 정보 수집이 필요합니다."
+            st.warning(f"🔍 **정보 보완 필요**: {reason}") # 사용자 화면에 사유 출력
             return {"next_step": "continue", "iteration": state['iteration'] + 1}
+        
+        st.success("✅ 정보가 충분합니다. 최종 보고서를 작성합니다.")
         return {"next_step": "end", "iteration": state['iteration'] + 1}
 
     def synthesizer_node(state: AgentState):
