@@ -42,8 +42,18 @@ def create_agent():
         st.write("🎯 **Step 1. Planner**: 리서치 전략 수립 중...")
         prompt = f"'{state['topic']}'에 대해 2026년 최신 정보를 찾기 위한 검색 키워드 3개를 한 줄에 하나씩만 출력해줘."
         res = fast_llm.invoke(prompt)
-        raw_res = res.content if hasattr(res, 'content') else res
-        raw_text = "".join([str(x) for x in raw_res]) if isinstance(raw_res, list) else str(raw_res)
+        
+        # [노이즈 제거] 객체 형태가 아닌 순수 텍스트만 추출하도록 로직 강화
+        if hasattr(res, 'content'):
+            raw_text = str(res.content)
+        else:
+            raw_text = str(res)
+        
+        # JSON 형태나 dict 형태의 문자열이 섞여 들어오는 경우 처리
+        if "text': '" in raw_text:
+            match = re.search(r"text':\s*'([^']*)'", raw_text)
+            if match: raw_text = match.group(1)
+
         queries = [re.sub(r'^[0-9.\-\*\s]+', '', q).strip() for q in raw_text.split('\n') if q.strip()][:3]
         return {"plan": queries or [state['topic']], "iteration": 0, "context": []}
 
@@ -199,24 +209,57 @@ if not st.session_state.selected_report:
     3. 결과가 나오면 **PDF 보고서** 다운로드 및 **Manus 인포그래픽** 제작이 가능합니다.
     """)
 else:
-    # 리포트 상세 화면
+    # 1. [질문 상단 고정] 사용자가 무엇을 물었는지 항상 보이도록 설정
     item = st.session_state.selected_report
-    st.header(f"📑 {item['title']}")
     
-    tab1, tab2 = st.tabs(["📄 리포트 본문", "🎨 비주얼 제작"])
-    with tab1:
-        st.markdown(item['report'])
+    # 상단 헤더 스타일링
+    st.info(f"🔍 **현재 분석 리포트:** {item['title']}")
+    
+    # 2. [리포트 본문] 탭을 제거하고 전체 화면에 바로 노출
+    st.markdown("---")
+    st.markdown(item['report'])
+    
+    # 3. [하단 액션 영역] 보고서가 끝나는 지점에 버튼 배치
+    st.divider()
+    st.subheader("🛠️ 리포트 후속 작업")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("📂 **문서 저장**")
         pdf_bytes, safe_name = create_professional_pdf(item['report'], item['title'])
-        st.download_button("📩 PDF 보고서 다운로드", data=pdf_bytes, file_name=f"{safe_name}.pdf")
+        st.download_button(
+            "📩 PDF 보고서 다운로드", 
+            data=pdf_bytes, 
+            file_name=f"{safe_name}.pdf",
+            use_container_width=True
+        )
     
-    with tab2:
-        st.subheader("📊 Manus 인포그래픽 슬라이드")
-        style_input = st.text_input("디자인 테마", placeholder="예: 'Professional Blue, High-tech infographic'")
-        if st.button("🚀 슬라이드 생성 시작"):
-            url, msg = create_manus_infographic(item['title'], item['report'], style_input)
-            if url: st.success("완성되었습니다!"); st.link_button("📂 결과물 확인", url)
-            else: st.error(msg)
-
+    with col2:
+        st.write("🎨 **슬라이드 작성성**")
+        # Manus API 키 재확인 로직 (인식 오류 방지)
+        current_manus_key = st.secrets.get("MANUS_API_KEY")
+        
+        with st.expander("📊 Manus 인포그래픽 슬라이드 생성", expanded=True):
+            style_input = st.text_input(
+                "디자인 테마", 
+                placeholder="예: 'Professional Blue, Modern, High-tech'",
+                key="manus_style_input"
+            )
+            
+            if st.button("🚀 슬라이드 생성 시작", use_container_width=True):
+                if not current_manus_key:
+                    st.error("🚨 MANUS_API_KEY가 시스템에 등록되지 않았습니다. Secrets 설정을 확인해주세요.")
+                else:
+                    with st.spinner("Manus 에이전트가 슬라이드를 디자인하고 있습니다..."):
+                        # 여기서 전역 변수 대신 직접 키를 넘기거나 함수 내에서 st.secrets를 쓰도록 되어있어야 합니다.
+                        url, msg = create_manus_infographic(item['title'], item['report'], style_input)
+                        if url:
+                            st.success("✅ 인포그래픽 슬라이드 제작 완료!")
+                            st.link_button("📂 결과물 확인 및 다운로드", url, use_container_width=True)
+                        else:
+                            st.error(f"❌ 생성 실패: {msg}")
+                            
 # 입력창 (고정)
 query = st.chat_input("조사할 업무 주제를 입력하세요 (예: 2026년 eSIM 시장 전망)")
 if query:
