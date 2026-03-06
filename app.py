@@ -31,7 +31,7 @@ class AgentState(TypedDict):
     context: List[str]
     iteration: int
     next_step: str
-    final_title: str # AI가 생성할 최종 제목 추가
+    final_title: str # AI가 생성할 최종 제목 추가l
 
 def create_agent():
     fast_llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=GEM_KEY)
@@ -84,27 +84,15 @@ def create_agent():
         return {"next_step": "end", "iteration": state['iteration'] + 1}
 
     def synthesizer_node(state: AgentState):
-        st.write("📝 **Step 5. Synthesizer**: 최종 리포트 및 제목 생성 중...")
+        st.write("📝 **Step 5. Synthesizer**: 최종 보고서 및 제목 생성 중...")
         
         # 1. 전문적인 제목 생성
         title_prompt = f"사용자 질문: {state['topic']}\n수집 자료 요약: {str(state['context'])[:500]}\n위 내용을 바탕으로 보고서에 어울리는 전문적이고 간결한 제목(한 줄)을 생성하세요."
         title_res = smart_llm.invoke(title_prompt)
         final_title = str(title_res.content).strip().replace('"', '').replace("'", "")
 
-        # 2. 보고서 본문 작성 (참고 자료 URL 포함 지시 강화)
-        report_prompt = f"""
-        당신은 전문 리서치 애널리스트입니다. 아래 자료를 바탕으로 고퀄리티 리포트를 작성하세요.
-        
-        제목: {final_title}
-        자료: {state['context']}
-        
-        [작성 가이드라인]
-        1. 자료에 포함된 팩트를 중심으로 심층 분석 내용을 작성하세요.
-        2. 반드시 보고서 마지막 섹션으로 **[주요 참고 출처]**를 만드세요.
-        3. 수집된 자료(context)에 포함된 원문 URL 주소들을 추출하여 웹 사이트와 영상 소스별로 리스트업하세요.
-        4. 웹 사이트 URL은 최소 3개 이상 포함하세요.
-        5. 마지막 워터마크는 'Joosung's Agent Report'를 넣으세요.
-        """
+        # 2. 보고서 본문 작성
+        report_prompt = f"제목: {final_title}\n자료: {state['context']}\n2026년 기준 전문 리포트를 작성하세요. 마지막엔 'Jiho/Suho Daddy's Agent Report'를 넣으세요."
         report_res = smart_llm.invoke(report_prompt)
         
         return {"context": [report_res.content], "final_title": final_title}
@@ -121,26 +109,69 @@ def create_agent():
     return workflow.compile()
 
 # --- 4. 유틸리티 함수 ---
-def create_gamma_presentation(topic, report_content, style_instruction):
-    if not GAMMA_KEY: return None, "API 키 누락"
-    BASE_URL = "https://public-api.gamma.app/v1.0/generations"
-    headers = {"X-API-KEY": GAMMA_KEY, "Content-Type": "application/json", "accept": "application/json"}
-    payload = {
-        "inputText": f"Topic: {topic}\n\nContent: {report_content[:5000]}\n\nStyle Guide: {style_instruction}",
-        "textMode": "preserve", "format": "presentation", "exportAs": "pptx", "textOptions": {"language": "ko"}
+def create_manus_infographic(topic, report_content, style_instruction):
+    """
+    Manus AI를 사용하여 리서치 내용을 16:9 인포그래픽 슬라이드로 제작합니다.
+    """
+    if not MANUS_API_KEY:
+        return None, "Manus API 키가 설정되지 않았습니다."
+
+    url = "https://api.manus.ai/v1/tasks"
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "API_KEY": MANUS_API_KEY
     }
+    
+    # [인포그래픽 특화 프롬프트] 
+    # 16:9 비율 및 사용자 정의 스타일 가이드 반영
+    prompt = f"""
+    Create a professional 16:9 infographic presentation based on this research.
+    
+    Topic: {topic}
+    Content: {report_content[:5000]}
+    
+    [Design Direction: CRITICAL]
+    Style Theme: {style_instruction}
+    Layout: 16:9 Widescreen slides.
+    Visual Type: Infographic style (Use icons, data charts, and minimal text).
+    Structure: Break down complex data into visual diagrams and flowcharts.
+    Formatting: Do not use standard bullet points only; use creative infographic layouts.
+    """
+    
+    data = {
+        "prompt": prompt,
+        "task_mode": "agent",
+        "agent_profile": "manus-1.6" # 인포그래픽 구성 능력이 강화된 최신 프로필
+    }
+
     try:
-        response = requests.post(BASE_URL, json=payload, headers=headers)
-        if response.status_code not in [200, 201]: return None, f"Gamma 에러: {response.status_code}"
-        gen_id = response.json().get("generationId")
-        for _ in range(30):
-            time.sleep(10)
-            status_res = requests.get(f"{BASE_URL}/{gen_id}", headers=headers)
-            status_data = status_res.json()
-            if status_data.get("status") == "completed": return status_data.get("gammaUrl"), "성공"
-            elif status_data.get("status") == "error": return None, "Gamma 내부 오류"
+        response = requests.post(url, json=data, headers=headers)
+        if response.status_code not in [200, 201]:
+            return None, f"Manus API 오류: {response.status_code}"
+        
+        task_id = response.json().get("id")
+        
+        # 상태 폴링 (Polling)
+        with st.status("📊 Manus 슬라이드 에이전트 가동 중...", expanded=True) as s:
+            for _ in range(60): 
+                time.sleep(10)
+                status_res = requests.get(f"{url}/{task_id}", headers=headers)
+                status_data = status_res.json()
+                
+                curr_status = status_data.get("status")
+                if curr_status == "completed":
+                    files = status_data.get("files", [])
+                    # PPTX 파일 우선 추출
+                    pptx_url = next((f['url'] for f in files if f['filename'].endswith('.pptx')), None)
+                    s.update(label="✅ 인포그래픽 슬라이드 완성!", state="complete")
+                    return pptx_url or status_data.get("share_url"), "성공"
+                elif curr_status == "error":
+                    return None, f"Manus 에러: {status_data.get('error_message')}"
+                    
         return None, "시간 초과"
-    except Exception as e: return None, str(e)
+    except Exception as e:
+        return None, str(e)
 
 def create_professional_pdf(text, title):
     safe_title = re.sub(r'[\\/*?:"<>|]', "", title)
@@ -218,16 +249,20 @@ if st.session_state.selected_report:
     st.download_button("📩 PDF 보고서 다운로드", data=pdf_bytes, file_name=f"{safe_filename}.pdf")
     
     st.divider()
-    st.subheader("🎨 Gamma AI PPT 제작")
-    style_input = st.text_input("디자인 컨셉 입력", placeholder="예: 깔끔한 화이트 톤의 비즈니스 스타일")
-    if st.button("🚀 Gamma PPT 생성"):
-        with st.status("🪄 생성 중...") as s:
-            url, msg = create_gamma_presentation(item['title'], item['report'], style_input)
+    st.subheader("📊 Manus AI 인포그래픽 제작")
+    style_input = st.text_input(
+        "디자인 컨셉 (예: 'Dark theme with neon accents, rebellious zine style')", 
+        placeholder="스타일 가이드를 입력하세요"
+    )
+
+    if st.button("🚀 Manus 슬라이드 생성"):
+        with st.spinner("Manus 에이전트가 디자인 설계 및 시각화를 진행 중입니다..."):
+            url, msg = create_manus_infographic(item['title'], item['report'], style_input)
             if url:
-                s.update(label="✅ 완성!", state="complete")
-                st.components.v1.html(f"<script>window.open('{url}', '_blank');</script>", height=0)
-                st.link_button("📊 PPT 수동 열기", url)
-            else: st.error(msg)
+                st.success("인포그래픽 슬라이드가 생성되었습니다!")
+                st.link_button("📂 결과물 확인 및 다운로드", url)
+            else:
+                st.error(msg)
 
 query = st.chat_input("조사할 주제를 입력하세요...")
 if query:
@@ -246,6 +281,4 @@ if query:
         
         st.session_state.history.append({"title": final_title, "report": final_report})
         st.session_state.selected_report = {"title": final_title, "report": final_report}
-
         st.rerun()
-
