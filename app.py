@@ -84,15 +84,27 @@ def create_agent():
         return {"next_step": "end", "iteration": state['iteration'] + 1}
 
     def synthesizer_node(state: AgentState):
-        st.write("📝 **Step 5. Synthesizer**: 최종 보고서 및 제목 생성 중...")
+        st.write("📝 **Step 5. Synthesizer**: 최종 리포트 및 제목 생성 중...")
         
         # 1. 전문적인 제목 생성
         title_prompt = f"사용자 질문: {state['topic']}\n수집 자료 요약: {str(state['context'])[:500]}\n위 내용을 바탕으로 보고서에 어울리는 전문적이고 간결한 제목(한 줄)을 생성하세요."
         title_res = smart_llm.invoke(title_prompt)
         final_title = str(title_res.content).strip().replace('"', '').replace("'", "")
 
-        # 2. 보고서 본문 작성
-        report_prompt = f"제목: {final_title}\n자료: {state['context']}\n2026년 기준 전문 리포트를 작성하세요. 마지막엔 'Jiho/Suho Daddy's Agent Report'를 넣으세요."
+        # 2. 보고서 본문 작성 (참고 자료 URL 포함 지시 강화)
+        report_prompt = f"""
+        당신은 전문 리서치 애널리스트입니다. 아래 자료를 바탕으로 고퀄리티 리포트를 작성하세요.
+        
+        제목: {final_title}
+        자료: {state['context']}
+        
+        [작성 가이드라인]
+        1. 자료에 포함된 팩트를 중심으로 심층 분석 내용을 작성하세요.
+        2. 반드시 보고서 마지막 섹션으로 **[주요 참고 출처]**를 만드세요.
+        3. 수집된 자료(context)에 포함된 원문 URL 주소들을 추출하여 웹 사이트와 영상 소스별로 리스트업하세요.
+        4. 웹 사이트 URL은 최소 3개 이상 포함하세요.
+        5. 마지막 워터마크는 'Joosung's Agent Report'를 넣으세요.
+        """
         report_res = smart_llm.invoke(report_prompt)
         
         return {"context": [report_res.content], "final_title": final_title}
@@ -236,3 +248,4 @@ if query:
         st.session_state.selected_report = {"title": final_title, "report": final_report}
 
         st.rerun()
+
