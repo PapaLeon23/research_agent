@@ -210,7 +210,7 @@ if not st.session_state.selected_report:
     st.write("#### 💡 리서치 가이드")
     st.markdown("""
     1. 하단 채팅창에 **조사하고 싶은 비즈니스 주제**를 입력하세요.
-    2. 에이전트가 5단계(계획-웹 탑색-영상 탐색-점검-생성성) 공정을 시작합니다.
+    2. 에이전트가 5단계(계획-웹 탑색-영상 탐색-점검-생성) 공정을 시작합니다.
     3. 결과가 나오면 **PDF 보고서** 다운로드 및 **Manus 인포그래픽** 제작이 가능합니다.
     """)
 else:
@@ -298,4 +298,5 @@ if query:
     final_title = result['final_title']
     st.session_state.history.append({"title": final_title, "report": final_report})
     st.session_state.selected_report = {"title": final_title, "report": final_report}
+
     st.rerun()
