@@ -35,7 +35,7 @@ class AgentState(TypedDict):
 
 def create_agent():
     fast_llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=GEM_KEY)
-    smart_llm = ChatAnthropic(model="claude-3-5-sonnet-20240620", anthropic_api_key=ANT_KEY)
+    smart_llm = ChatAnthropic(model="claude-sonnet-4-6", anthropic_api_key=ANT_KEY)
     search_tool = TavilySearchResults(k=5, tavily_api_key=TAV_KEY)
 
     def planner_node(state: AgentState):
@@ -234,4 +234,5 @@ if query:
         
         st.session_state.history.append({"title": final_title, "report": final_report})
         st.session_state.selected_report = {"title": final_title, "report": final_report}
+
         st.rerun()
