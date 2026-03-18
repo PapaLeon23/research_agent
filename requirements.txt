@@ -1,9 +1,10 @@
 streamlit
+requests
+pandas
+PyPDF2
+python-docx
+python-pptx
+urllib3
+fpdf
 langchain-anthropic
 langchain-google-genai
-langchain-community
-langgraph
-tavily-python
-youtube-transcript-api
-fpdf2
-requests
